@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Herd Watch – Goat Tracker Dashboard</title>
+<style>
+:root{--ink:#0d2b3a;--mute:#4d6b7a;--glass:rgba(255,255,255,.58);--glass-d:rgba(8,40,58,.55);--line:rgba(255,255,255,.4);--cyan:#22c6e8;--ok:#14a46f;--warn:#e89a13;--bad:#e5484d}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Inter,system-ui,"Segoe UI",Roboto,sans-serif;color:var(--ink);height:100vh;overflow:hidden;background:#0a3347}
+.bg{position:fixed;inset:0;z-index:-1;background:radial-gradient(55% 50% at 85% 5%,#46d0c4 0,transparent 60%),radial-gradient(50% 60% at 5% 95%,#1b7fb0 0,transparent 60%),linear-gradient(135deg,#0a2f45,#0f5f7e 55%,#157f98)}
+.app{display:grid;grid-template-columns:236px 1fr;gap:16px;padding:16px;height:100vh}
+.glass{background:var(--glass);backdrop-filter:blur(22px) saturate(1.4);-webkit-backdrop-filter:blur(22px) saturate(1.4);border:1px solid var(--line);box-shadow:0 10px 30px rgba(3,30,45,.18)}
+.side{background:var(--glass-d);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);border:1px solid var(--line);border-radius:26px;padding:16px;color:#e8fbff;overflow:auto}
+.brand{display:flex;gap:10px;align-items:center;padding:6px 6px 16px}
+.logo{width:38px;height:38px;border-radius:12px;background:rgba(255,255,255,.16);display:grid;place-items:center;font-size:20px}
+.brand b{display:block;font-size:14px}.brand small{opacity:.65;font-size:11px}
+.sec{font-size:10px;letter-spacing:.14em;text-transform:uppercase;opacity:.55;margin:14px 8px 6px}
+.nav{display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;border:0;border-radius:12px;background:none;color:inherit;font:inherit;font-size:13px;cursor:pointer;text-align:left;transition:.2s}
+.nav:hover{background:rgba(255,255,255,.12)}
+.nav.on{background:linear-gradient(90deg,#19b7e3,#2fd0e8);color:#04293a;font-weight:600;box-shadow:0 6px 18px rgba(34,198,232,.45)}
+.nav .n{font-style:normal;margin-left:auto;font-size:10px;background:rgba(255,255,255,.25);border-radius:99px;padding:2px 7px}
+.nav.on .n{background:rgba(4,41,58,.2)}
+svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.right{display:flex;flex-direction:column;gap:16px;min-width:0;min-height:0}
+.top{border-radius:20px;padding:10px 12px;display:flex;align-items:center;gap:12px;background:var(--glass-d);color:#e8fbff}
+.search{flex:1;display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.12);border-radius:12px;padding:9px 12px}
+.search input{flex:1;background:none;border:0;outline:0;color:#fff;font:inherit;font-size:13px}
+.search input::placeholder{color:rgba(255,255,255,.6)}
+.chip{font-size:11px;padding:6px 10px;border-radius:99px;background:rgba(255,255,255,.15);display:flex;gap:6px;align-items:center;white-space:nowrap}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--ok)}
+.chip.demo .dot{background:var(--warn)}
+.ava{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#2fd0e8,#1b7fb0);display:grid;place-items:center;font-weight:700;font-size:12px;flex:none}
+.main{flex:1;min-height:0;overflow:auto;border-radius:28px;padding:26px}
+h1{font-size:28px;letter-spacing:-.02em}.sub{color:var(--mute);font-size:13px;margin-top:4px}
+.head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:20px}
+.btn{border:0;border-radius:12px;padding:10px 16px;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;display:inline-flex;gap:6px;align-items:center;transition:.2s}
+.btn.g{background:rgba(255,255,255,.55);color:var(--ink)}.btn.d{background:#0d2b3a;color:#fff}.btn:hover{transform:translateY(-1px)}
+.grid4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.card{background:rgba(255,255,255,.5);border:1px solid var(--line);border-radius:20px;padding:18px;animation:up .5s both}
+.card:hover{transform:translateY(-3px);transition:.2s}
+@keyframes up{from{opacity:0;transform:translateY(10px)}}
+.ic{width:34px;height:34px;border-radius:11px;background:rgba(255,255,255,.75);display:grid;place-items:center;color:#0b6a88}
+.row{display:flex;justify-content:space-between;align-items:center}
+.big{font-size:30px;font-weight:700;letter-spacing:-.02em;margin-top:14px}.lbl{font-size:12.5px;color:var(--mute);margin-top:2px}
+.pill{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:99px;display:inline-block}
+.p-ok{background:#d3f5e6;color:#0b7a50}.p-warn{background:#ffecc7;color:#9a6200}.p-bad{background:#ffdadb;color:#b42327}
+.two{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:14px;margin-top:14px}
+h3{font-size:15px}.tabs{display:flex;background:rgba(255,255,255,.55);border-radius:12px;padding:3px}
+.tab{border:0;background:none;font:inherit;font-size:12px;padding:6px 12px;border-radius:9px;cursor:pointer;color:var(--mute)}
+.tab.on{background:#0d2b3a;color:#fff}
+.bars{display:flex;align-items:flex-end;gap:8px;height:170px;margin-top:18px}
+.bar{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end;font-size:10px;color:var(--mute)}
+.bar i{display:block;width:100%;border-radius:8px 8px 4px 4px;background:linear-gradient(#32d3ea,#1b8fc0);transition:height .6s}
+.donut{position:relative;width:150px;height:150px;margin:14px auto}
+.donut b{position:absolute;inset:0;display:grid;place-items:center;font-size:28px}
+.mini{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.mini div{background:rgba(255,255,255,.6);border-radius:12px;text-align:center;padding:8px 4px;font-size:11px;color:var(--mute)}.mini b{display:block;font-size:17px;color:var(--ink)}
+table{width:100%;border-collapse:collapse;font-size:13px;margin-top:10px}
+th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute);padding:8px 6px}
+td{padding:11px 6px;border-top:1px solid rgba(255,255,255,.55)}
+.herd{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:14px}
+.gc{padding:0;overflow:hidden}
+.gh{height:92px;display:grid;place-items:center;font-size:38px;font-weight:700;color:#fff;position:relative;text-shadow:0 2px 8px rgba(0,0,0,.2)}
+.gh .pill{position:absolute;top:10px;right:10px}
+.gb{padding:14px}.gb h4{font-size:15px}.gb small{color:var(--mute)}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:12px 0;font-size:11px;color:var(--mute)}
+.stats b{display:block;font-size:14px;color:var(--ink)}
+.field{background:rgba(255,255,255,.35);border-radius:20px;width:100%;height:auto}
+.leg{display:flex;gap:16px;margin-top:12px;font-size:12px;color:var(--mute)}
+.leg span:before{content:"";display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;background:var(--c)}
+.alert{display:flex;gap:14px;align-items:center;padding:14px 16px;margin-bottom:10px}
+.alert .ic{flex:none}.alert p{flex:1;font-size:13px}.alert small{color:var(--mute)}
+.empty{text-align:center;color:var(--mute);padding:40px}
+@media(max-width:980px){.grid4{grid-template-columns:repeat(2,1fr)}.two{grid-template-columns:1fr}}
+@media(max-width:760px){.app{grid-template-columns:64px 1fr;padding:10px;gap:10px}.side .nav span,.side .sec,.brand div,.nav .n{display:none}.main{padding:16px}h1{font-size:22px}}
+.bg{background-size:200% 200%;animation:drift 20s ease-in-out infinite alternate}
+@keyframes drift{to{background-position:100% 100%}}
+.card{animation:none;transition:transform .2s,box-shadow .2s}.card:hover{transform:translateY(-4px);box-shadow:0 14px 30px rgba(3,30,45,.2)}
+.anim .card{animation:up .55s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(var(--i,0)*45ms)}
+.anim .bar i{transform-origin:bottom;animation:grow .9s cubic-bezier(.2,.8,.2,1) both}@keyframes grow{from{transform:scaleY(0)}}
+.anim .donut circle:nth-child(2){animation:dash 1.3s ease both}@keyframes dash{from{stroke-dasharray:0 400}}
+.dot{animation:pulse 2s infinite}@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(20,164,111,.6)}100%{box-shadow:0 0 0 9px transparent}}
+.p-bad{animation:blink 1.6s infinite}@keyframes blink{50%{opacity:.5}}
+.nav{transition:.2s}.nav:hover{transform:translateX(4px)}.btn:active{transform:scale(.96)}
+.ping{transform-box:fill-box;transform-origin:center;animation:ping 2s ease-out infinite}@keyframes ping{from{transform:scale(.6);opacity:.7}to{transform:scale(2.4);opacity:0}}
+@keyframes spin{to{transform:rotate(360deg)}}
+.sun{transform-origin:32px 32px;animation:spin 14s linear infinite}
+.cl{animation:float 5s ease-in-out infinite alternate}@keyframes float{to{transform:translateX(3px)}}
+.dp{stroke:#6ec3f5;stroke-width:3;stroke-linecap:round;animation:fall .9s linear infinite}@keyframes fall{from{transform:translateY(-6px);opacity:0}30%{opacity:1}to{transform:translateY(8px);opacity:0}}
+.bolt{animation:flash 2.4s infinite}@keyframes flash{0%,88%,100%{opacity:.25}91%,96%{opacity:1}}
+.card.k-sun{background:linear-gradient(135deg,#f7b733,#f0803c)}.card.k-part{background:linear-gradient(135deg,#4facfe,#2b86c5)}.card.k-cloud{background:linear-gradient(135deg,#7f9db3,#4e6e85)}.card.k-rain{background:linear-gradient(135deg,#4b79a1,#283e51)}.card.k-storm{background:linear-gradient(135deg,#5b3a8c,#2a1442)}.card.k-fog{background:linear-gradient(135deg,#9fb1bd,#6b8190)}
+.wxh{display:flex;gap:28px;align-items:center;flex-wrap:wrap;color:#fff;border:0;padding:24px}.wxh .big{font-size:56px;margin:0}.wxh .st{display:grid;grid-template-columns:repeat(2,auto);gap:10px 28px;margin-left:auto;font-size:12px}.wxh .st b{display:block;font-size:17px}
+.wxs{display:flex;align-items:center;gap:18px;flex-wrap:wrap;cursor:pointer}.wxs .days{display:flex;gap:14px;margin-left:auto}.days div{text-align:center;font-size:11px;color:var(--mute);display:flex;flex-direction:column;align-items:center}.days b{color:var(--ink);font-size:13px}
+.hours{display:flex;gap:10px;overflow-x:auto;padding:12px 0 6px}.hr{flex:none;width:62px;text-align:center;font-size:11px;color:var(--mute);background:rgba(255,255,255,.55);border-radius:14px;padding:10px 4px;display:flex;flex-direction:column;align-items:center;gap:4px;transition:.2s}.hr:hover{transform:translateY(-3px);background:#fff}.hr b{color:var(--ink);font-size:14px}
+.dy{display:grid;grid-template-columns:44px 36px 50px 34px 1fr 34px;gap:8px;align-items:center;padding:8px 0;border-top:1px solid rgba(255,255,255,.55);font-size:13px}.dy small{color:var(--mute)}
+.rg{height:6px;border-radius:9px;background:rgba(255,255,255,.7);position:relative}.rg i{position:absolute;top:0;bottom:0;border-radius:9px;background:linear-gradient(90deg,#32d3ea,#f5a623);transform-origin:left;animation:grow2 .9s both}@keyframes grow2{from{transform:scaleX(0)}}
+.tip{display:flex;gap:10px;padding:10px 0;border-top:1px solid rgba(255,255,255,.55);font-size:13px}
+</style>
+</head>
+<body>
+<div class="bg"></div>
+<div class="app">
+  <aside class="side">
+    <div class="brand"><div class="logo">🐐</div><div><b>Herd Watch</b><small>Goat tracker</small></div></div>
+    <div class="sec">Dashboard</div>
+    <div id="nav"></div>
+  </aside>
+  <div class="right">
+    <header class="top">
+      <label class="search"><svg class="i" viewBox="0 0 24 24"><path d="M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16M21 21l-4.3-4.3"/></svg><input id="q" placeholder="Search goats by name or collar ID..."></label>
+      <span class="chip" id="mode"><i class="dot"></i><span>Live</span></span>
+      <span class="chip" id="lora"><i class="dot"></i><span>LoRa</span></span>
+      <span class="ava">HW</span>
+    </header>
+    <main class="main glass" id="view"></main>
+  </div>
+</div>
+
+<script>
+/* ================= CONFIG =================
+   /api/goats returns the latest reading of every goat:
+   {"goats":[{"goat_id":"G01","received_at":"...","gps":{"valid":true,"lat":15.1,"lon":120.5},
+              "temperature_c":38.6,"heart_rate_bpm":80,"battery_v":3.95,"battery_pct":83}]}
+   If the request fails, the dashboard falls back to demo data (the top chip then says "Demo data"). */
+const API_URL = "/api/goats";
+const OWNER = "";            // e.g. "Andriy" shows "Good afternoon, Andriy"
+const REFRESH_MS = 10000;
+
+/* Weather: set your pasture coordinates (used when no live GPS is available) */
+const WEATHER_LAT = 15.145, WEATHER_LNG = 120.589, WEATHER_PLACE = "Angeles City, PH";
+
+/* ================= ICONS ================= */
+const P = {
+ grid:"M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z",
+ herd:"M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2M10 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M21 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8",
+ map:"M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0zM12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6",
+ bell:"M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0",
+ temp:"M14 14.8V3.5a2.5 2.5 0 0 0-5 0v11.3a4.5 4.5 0 1 0 5 0z",
+ heart:"M19 14c1.5-1.5 3-3.2 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.8 0-3 .5-4.5 2-1.5-1.5-2.7-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4 3 5.5l7 7z",
+ up:"M7 17L17 7M7 7h10v10",
+ refresh:"M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5",
+ cloud:"M17.5 19H9a7 7 0 1 1 6.7-9h1.8a4.5 4.5 0 0 1 0 9z"
+};
+const ic = k => `<svg class="i" viewBox="0 0 24 24"><path d="${P[k]}"/></svg>`;
+
+/* ================= DATA ================= */
+const names=["Bella","Daisy","Billy","Luna","Pepper","Mocha","Clover","Rocky","Hazel","Biscuit","Ginger","Nibbles"];
+const rnd=(a,b)=>a+Math.random()*(b-a);
+let live=false, goats=[], acked=new Set(), page="overview", metric="temp", query="", focus=null;
+const hist={temp:[],hr:[]};
+
+function demo(){
+  return names.map((n,i)=>({id:"G-"+String(i+1).padStart(2,"0"),name:n,temp:+rnd(38.6,39.6).toFixed(1),hr:Math.round(rnd(72,95)),battery:Math.round(rnd(25,98)),lat:10+rnd(0,.01),lng:10+rnd(0,.014),mins:Math.round(rnd(0,6))}));
+}
+function status(g){
+  if(g.temp>=40.3||g.hr>=120||g.battery<10||g.mins>30) return "bad";
+  if(g.temp>=39.8||g.hr>=100||g.battery<20||g.mins>10) return "warn";
+  return "ok";
+}
+function battPct(v){   // battery volts -> percent (18650 Li-ion curve)
+  const T=[[3.0,0],[3.3,10],[3.5,25],[3.7,50],[3.9,75],[4.0,90],[4.2,100]];
+  if(v<=T[0][0])return 0; if(v>=T[6][0])return 100;
+  for(let i=0;i<6;i++){if(v<=T[i+1][0]){const f=(v-T[i][0])/(T[i+1][0]-T[i][0]);return Math.round(T[i][1]+f*(T[i+1][1]-T[i][1]))}}
+  return 100;
+}
+function normalize(r){
+  return r.map(x=>{
+    const gps=x.gps||{};
+    const when=x.received_at||x.last_seen;
+    return {
+      id:x.goat_id||x.id||x.collar_id||x.name,
+      name:x.name||x.goat_id||x.id||"Goat",
+      temp:+(x.temperature_c??x.temp??x.temperature??0),
+      hr:+(x.heart_rate_bpm??x.hr??x.heart_rate??0),
+      // unknown battery is shown as 100% so it does not raise a false low-battery alert
+      battery:x.battery_pct!=null?+x.battery_pct:(x.battery_v!=null?battPct(+x.battery_v):+(x.battery??x.battery_level??100)),
+      lat:+(gps.lat??x.lat??x.latitude??0),
+      lng:+(gps.lon??x.lng??x.longitude??0),
+      mins:when?Math.max(0,Math.round((Date.now()-new Date(when))/60000)):(x.mins??0)
+    };
+  });
+}
+async function load(){
+  try{
+    const r=await fetch(API_URL,{cache:"no-store"}); if(!r.ok) throw 0;
+    const j=await r.json(); goats=normalize(Array.isArray(j)?j:j.goats); live=true;
+  }catch(e){
+    live=false;
+    if(!goats.length) goats=demo();
+    else goats.forEach(g=>{g.temp=+Math.min(41,Math.max(38,g.temp+rnd(-.15,.2))).toFixed(1);g.hr=Math.round(Math.min(130,Math.max(60,g.hr+rnd(-4,5))));g.battery=Math.max(3,g.battery-(Math.random()<.2?1:0));g.mins=Math.round(rnd(0,6));g.lat+=rnd(-.0004,.0004);g.lng+=rnd(-.0004,.0004)});
+  }
+  goats.forEach(g=>g.s=status(g));
+  const avg=k=>goats.length?goats.reduce((a,g)=>a+g[k],0)/goats.length:0;
+  hist.temp.push(+avg("temp").toFixed(2)); hist.hr.push(Math.round(avg("hr")));
+  while(hist.temp.length>12){hist.temp.shift();hist.hr.shift()}
+  if(hist.temp.length<12){ // seed so the chart looks full on first load
+    const t=hist.temp[hist.temp.length-1],h=hist.hr[hist.hr.length-1];
+    while(hist.temp.length<12){hist.temp.unshift(+(t+rnd(-.3,.3)).toFixed(2));hist.hr.unshift(Math.round(h+rnd(-6,6)))}
+  }
+  const m=document.getElementById("mode");
+  m.className="chip"+(live?"":" demo"); m.lastChild.textContent=live?"Live data":"Demo data";
+  render();
+}
+
+/* ================= HELPERS ================= */
+const pill = s => `<span class="pill p-${s}">${({ok:"Healthy",warn:"Watch",bad:"Alert"})[s]}</span>`;
+const col=s=>({ok:"#14a46f",warn:"#e89a13",bad:"#e5484d"}[s]);
+const hue=n=>{let h=0;for(const c of n)h=(h*31+c.charCodeAt(0))%360;return h};
+const avg=k=>goats.length?goats.reduce((a,g)=>a+g[k],0)/goats.length:0;
+function alerts(){
+  const out=[];
+  goats.forEach(g=>{
+    if(g.temp>=39.8)out.push({id:g.id+"t",g,s:g.temp>=40.3?"bad":"warn",t:`High body temperature: ${g.temp.toFixed(1)} °C`});
+    if(g.hr>=100)out.push({id:g.id+"h",g,s:g.hr>=120?"bad":"warn",t:`Elevated heart rate: ${g.hr} bpm`});
+    if(g.battery<20)out.push({id:g.id+"b",g,s:g.battery<10?"bad":"warn",t:`Collar battery low: ${g.battery}%`});
+    if(g.mins>10)out.push({id:g.id+"o",g,s:g.mins>30?"bad":"warn",t:`No signal for ${g.mins} min`});
+  });
+  return out.filter(a=>!acked.has(a.id));
+}
+function greet(){const h=new Date().getHours();return (h<12?"Good morning":h<18?"Good afternoon":"Good evening")+(OWNER?", "+OWNER:"")}
+const match=g=>!query||(g.name+g.id).toLowerCase().includes(query);
+
+/* ================= PAGES ================= */
+function overview(){
+  const al=alerts(), c={ok:0,warn:0,bad:0}; goats.forEach(g=>c[g.s]++);
+  const pct=goats.length?Math.round(c.ok/goats.length*100):0, R=60, C=2*Math.PI*R;
+  const vals=hist[metric], mx=Math.max(...vals), mn=Math.min(...vals), unit=metric==="temp"?"°C":"bpm";
+  const bars=vals.map((v,i)=>{const h=18+((v-mn)/((mx-mn)||1))*78;return `<div class="bar"><span>${metric==="temp"?v.toFixed(1):v}</span><i style="height:${h}%"></i><span>${i===11?"now":"-"+(11-i)+"h"}</span></div>`}).join("");
+  const need=goats.filter(g=>g.s!=="ok").slice(0,5);
+  const card=(k,v,l,d,dc)=>`<div class="card"><div class="row"><div class="ic">${ic(k)}</div>${d?`<span class="pill p-${dc}">${d}</span>`:""}</div><div class="big">${v}</div><div class="lbl">${l}</div></div>`;
+  return `<div class="head"><div><h1>${greet()}</h1><p class="sub">Here is how your herd is doing right now.</p></div>
+   <div><button class="btn g" onclick="load()">${ic("refresh")} Refresh</button> <button class="btn d" onclick="go('alerts')">${ic("bell")} View alerts</button></div></div>
+  <div class="grid4">
+   ${card("herd",goats.length,"Goats tracked",goats.filter(g=>g.mins<=10).length+" online","ok")}
+   ${card("temp",avg("temp").toFixed(1)+"°",'Average body temperature',avg("temp")>=39.8?"High":"Normal",avg("temp")>=39.8?"warn":"ok")}
+   ${card("heart",Math.round(avg("hr")),"Average heart rate (bpm)",avg("hr")>=100?"High":"Normal",avg("hr")>=100?"warn":"ok")}
+   ${card("bell",al.length,"Active alerts",al.length?"Check now":"All clear",al.length?"bad":"ok")}
+  </div>
+  ${wxStrip()}
+  <div class="two">
+   <div class="card"><div class="row"><div><h3>Herd vitals</h3><p class="sub">Herd average, last 12 readings</p></div>
+     <div class="tabs"><button class="tab ${metric==="temp"?"on":""}" onclick="setM('temp')">Temperature</button><button class="tab ${metric==="hr"?"on":""}" onclick="setM('hr')">Heart rate</button></div></div>
+     <div class="bars">${bars}</div><p class="sub" style="text-align:center;margin-top:8px">Unit: ${unit}</p></div>
+   <div class="card"><h3>Herd status</h3><p class="sub">Share of healthy goats</p>
+     <div class="donut"><svg viewBox="0 0 150 150" width="150" height="150"><circle cx="75" cy="75" r="${R}" fill="none" stroke="rgba(255,255,255,.7)" stroke-width="14"/><circle cx="75" cy="75" r="${R}" fill="none" stroke="#22c6e8" stroke-width="14" stroke-linecap="round" stroke-dasharray="${C*pct/100} ${C}" transform="rotate(-90 75 75)"/></svg><b>${pct}%</b></div>
+     <div class="mini"><div><b>${c.ok}</b>Healthy</div><div><b>${c.warn}</b>Watch</div><div><b>${c.bad}</b>Alert</div></div></div>
+  </div>
+  <div class="card" style="margin-top:14px"><h3>Needs attention</h3>
+   ${need.length?`<table><tr><th>Goat</th><th>Temp</th><th>Heart rate</th><th>Battery</th><th>Status</th></tr>${need.map(g=>`<tr><td><b>${g.name}</b> <small style="color:var(--mute)">${g.id}</small></td><td>${g.temp.toFixed(1)} °C</td><td>${g.hr} bpm</td><td>${g.battery}%</td><td>${pill(g.s)}</td></tr>`).join("")}</table>`:`<p class="empty">Every goat looks healthy.</p>`}</div>`;
+}
+function herd(){
+  const l=goats.filter(match);
+  return `<div class="head"><div><h1>Herd</h1><p class="sub">${l.length} of ${goats.length} goats shown</p></div></div>
+  <div class="herd">${l.map((g,i)=>`<div class="card gc" style="animation-delay:${i*40}ms"><div class="gh" style="background:linear-gradient(135deg,hsl(${hue(g.name)} 60% 55%),hsl(${(hue(g.name)+50)%360} 65% 42%))">${g.name[0]}${pill(g.s)}</div>
+   <div class="gb"><h4>${g.name}</h4><small>Collar ${g.id} · seen ${g.mins} min ago</small>
+   <div class="stats"><div><b>${g.temp.toFixed(1)}°</b>Temp</div><div><b>${g.hr}</b>BPM</div><div><b>${g.battery}%</b>Battery</div></div>
+   <button class="btn g" style="width:100%;justify-content:center" onclick="locate('${g.id}')">${ic("map")} Locate</button></div></div>`).join("")||`<p class="empty">No goats match your search.</p>`}</div>`;
+}
+function mapPage(){
+  const l=goats.filter(g=>g.lat||g.lng); if(!l.length) return `<div class="head"><h1>Map</h1></div><p class="empty">No GPS positions yet.</p>`;
+  const la=l.map(g=>g.lat),ln=l.map(g=>g.lng),a=Math.min(...la),b=Math.max(...la),c=Math.min(...ln),d=Math.max(...ln);
+  const X=v=>60+((v-c)/((d-c)||1))*680, Y=v=>340-((v-a)/((b-a)||1))*280;
+  const pts=l.filter(match).map(g=>{const f=focus===g.id;return `<g><circle cx="${X(g.lng)}" cy="${Y(g.lat)}" r="${f?22:13}" fill="${col(g.s)}" opacity=".25"/>${g.s!=="ok"||f?`<circle class="ping" cx="${X(g.lng)}" cy="${Y(g.lat)}" r="13" fill="${col(g.s)}"/>`:""}<circle cx="${X(g.lng)}" cy="${Y(g.lat)}" r="7" fill="${col(g.s)}" stroke="#fff" stroke-width="2.5"/><text x="${X(g.lng)}" y="${Y(g.lat)-14}" text-anchor="middle" font-size="12" font-weight="${f?700:500}" fill="#0d2b3a">${g.name}</text></g>`}).join("");
+  return `<div class="head"><div><h1>Pasture map</h1><p class="sub">Collar positions${live?"":" (demo layout)"}</p></div></div>
+  <svg class="field" viewBox="0 0 800 400"><rect x="30" y="20" width="740" height="360" rx="26" fill="#cfeadd" stroke="#14a46f" stroke-width="3" stroke-dasharray="10 8"/><ellipse cx="660" cy="320" rx="70" ry="32" fill="#8fd3ee"/><text x="660" y="324" text-anchor="middle" font-size="11" fill="#0b6a88">Water</text><rect x="70" y="40" width="70" height="44" rx="8" fill="#d7b98f"/><text x="105" y="67" text-anchor="middle" font-size="11" fill="#6b4a22">Shelter</text>${pts}</svg>
+  <div class="leg"><span style="--c:#14a46f">Healthy</span><span style="--c:#e89a13">Watch</span><span style="--c:#e5484d">Alert</span></div>`;
+}
+function alertsPage(){
+  const al=alerts().filter(a=>match(a.g));
+  return `<div class="head"><div><h1>Alerts</h1><p class="sub">${al.length} open alert${al.length===1?"":"s"}</p></div></div>
+  ${al.map(a=>`<div class="card alert"><div class="ic" style="color:${col(a.s)}">${ic("bell")}</div><p><b>${a.g.name}</b> <small>${a.g.id}</small><br>${a.t}</p>${pill(a.s)}<button class="btn g" onclick="ack('${a.id}')">Acknowledge</button></div>`).join("")||`<p class="empty">No open alerts. Nice work!</p>`}`;
+}
+
+/* ================= WEATHER (Open-Meteo, no API key) ================= */
+let wx=null;
+const wkind=c=>c===0?"sun":c<=2?"part":c===3?"cloud":c<50?"fog":(c<70||(c>=80&&c<95))?"rain":c>=95?"storm":"cloud";
+const wdesc=c=>c===0?"Clear sky":c<=2?"Partly cloudy":c===3?"Overcast":c<50?"Fog":c<60?"Drizzle":c<70?"Rain":c>=95?"Thunderstorm":c>=80?"Rain showers":"Cloudy";
+const dn=d=>d.toLocaleDateString([], {weekday:"short"});
+const thi=(T,H)=>(1.8*T+32)-(0.55-0.0055*H)*(1.8*T-26);
+const heat=t=>t<72?{s:"ok",l:"Low"}:t<79?{s:"warn",l:"Moderate"}:{s:"bad",l:"High"};
+const wIcon=(k,s=64)=>{
+ const cl=`<path class="cl" d="M16 46h30a9 9 0 0 0 1-18 13 13 0 0 0-25-2A10 10 0 0 0 16 46z" fill="#f2fafd" stroke="#a9cfdd" stroke-width="1.5"/>`;
+ const sun=t=>`<g ${t||""}><g class="sun"><circle cx="32" cy="32" r="11" fill="#ffd34d"/>${[0,45,90,135,180,225,270,315].map(a=>`<line x1="32" y1="15" x2="32" y2="9" stroke="#ffd34d" stroke-width="3" stroke-linecap="round" transform="rotate(${a} 32 32)"/>`).join("")}</g></g>`;
+ const drops=[24,34,44].map((x,i)=>`<line class="dp" style="animation-delay:${i*.25}s" x1="${x}" y1="50" x2="${x-2}" y2="57"/>`).join("");
+ const b={sun:sun(),part:sun('transform="translate(0 -4) scale(.72)"')+cl,cloud:cl,rain:cl+drops,storm:cl+`<path class="bolt" d="M35 44l-7 11h5l-3 8 10-13h-5z" fill="#ffd34d"/>`,fog:cl+[52,57].map(y=>`<line x1="14" y1="${y}" x2="50" y2="${y}" stroke="#a9cfdd" stroke-width="3" stroke-linecap="round"/>`).join("")}[k];
+ return `<svg viewBox="0 0 64 64" width="${s}" height="${s}">${b}</svg>`};
+function demoWx(){const n=Date.now(),cs=[2,2,3,61,80,2,0];return{place:WEATHER_PLACE+" (demo)",cur:{t:31,h:68,f:36,w:12,rain:0,code:2},hours:Array.from({length:24},(_,i)=>({d:new Date(n+i*36e5),t:+(30+4*Math.sin((i-4)/24*6.28)).toFixed(1),p:i>9&&i<15?60:10,code:i>9&&i<15?61:2})),days:cs.map((c,i)=>({d:new Date(n+i*864e5),code:c,max:33-(c>=61?3:0),min:24,p:c>=61?70:10}))}}
+async function loadWx(){
+ const pts=goats.filter(g=>g.lat&&g.lng),useG=live&&pts.length;
+ const la=useG?pts.reduce((a,g)=>a+g.lat,0)/pts.length:WEATHER_LAT,ln=useG?pts.reduce((a,g)=>a+g.lng,0)/pts.length:WEATHER_LNG;
+ try{
+  const r=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${la}&longitude=${ln}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&hourly=temperature_2m,precipitation_probability,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=7`);
+  if(!r.ok)throw 0; const j=await r.json(),c=j.current,h=j.hourly,d=j.daily;
+  const i0=Math.max(0,h.time.findIndex(x=>new Date(x)>=Date.now()-36e5));
+  wx={place:useG?"Herd location":WEATHER_PLACE,cur:{t:c.temperature_2m,h:c.relative_humidity_2m,f:c.apparent_temperature,w:c.wind_speed_10m,rain:c.precipitation,code:c.weather_code},
+   hours:h.time.slice(i0,i0+24).map((x,i)=>({d:new Date(x),t:h.temperature_2m[i0+i],p:h.precipitation_probability[i0+i],code:h.weather_code[i0+i]})),
+   days:d.time.map((x,i)=>({d:new Date(x+"T12:00"),code:d.weather_code[i],max:d.temperature_2m_max[i],min:d.temperature_2m_min[i],p:d.precipitation_probability_max[i]}))};
+ }catch(e){wx=demoWx()}
+ if(page==="weather"||page==="overview")render();
+}
+function wxStrip(){
+ if(!wx)return ""; const c=wx.cur,hs=heat(thi(c.t,c.h));
+ return `<div class="card wxs" style="margin-top:14px" onclick="go('weather')"><div>${wIcon(wkind(c.code),56)}</div><div><div class="big" style="margin:0">${Math.round(c.t)}°C</div><div class="lbl">${wdesc(c.code)} · ${wx.place}</div></div>
+ <div class="days">${wx.days.slice(1,5).map(d=>`<div><small>${dn(d.d)}</small>${wIcon(wkind(d.code),30)}<b>${Math.round(d.max)}°</b></div>`).join("")}</div><span class="pill p-${hs.s}">Heat stress: ${hs.l}</span></div>`;
+}
+function weatherPage(){
+ if(!wx)return `<div class="head"><h1>Weather</h1></div><p class="empty">Loading forecast…</p>`;
+ const c=wx.cur,k=wkind(c.code),t=thi(c.t,c.h),hs=heat(t),mx=Math.max(...wx.days.map(d=>d.max)),mn=Math.min(...wx.days.map(d=>d.min));
+ const rain=Math.max(...wx.hours.map(h=>h.p||0)),tips=[];
+ if(hs.s==="bad")tips.push(["🔥","High heat stress: keep shade and cool clean water available, avoid moving or handling goats from 11:00 to 15:00."]);
+ else if(hs.s==="warn")tips.push(["🌡️","Moderate heat stress: check that shade and fresh water are within easy reach."]);
+ if(rain>=60)tips.push(["🌧️","Rain likely in the next 24 h: make sure the shelter is dry and kids stay out of wet, cold wind."]);
+ if(c.w>=40)tips.push(["💨","Strong wind: check fences and shelter roofing."]);
+ if(!tips.length)tips.push(["✅","Conditions look comfortable for the herd."]);
+ return `<div class="head"><div><h1>Weather</h1><p class="sub">${wx.place} · forecast by Open-Meteo</p></div><button class="btn g" onclick="loadWx()">${ic("refresh")} Refresh</button></div>
+ <div class="card wxh k-${k}"><div>${wIcon(k,96)}</div><div><div class="big">${Math.round(c.t)}°C</div><div>${wdesc(c.code)} · feels like ${Math.round(c.f)}°</div></div>
+  <div class="st"><div><b>${c.h}%</b>Humidity</div><div><b>${Math.round(c.w)} km/h</b>Wind</div><div><b>${c.rain} mm</b>Rain now</div><div><b>${t.toFixed(0)}</b>Heat index (THI)</div></div></div>
+ <div class="card" style="margin-top:14px"><h3>Next 24 hours</h3><div class="hours">${wx.hours.map(h=>`<div class="hr"><span>${h.d.toLocaleTimeString([], {hour:"numeric"})}</span>${wIcon(wkind(h.code),30)}<b>${Math.round(h.t)}°</b><span>💧${h.p||0}%</span></div>`).join("")}</div></div>
+ <div class="two"><div class="card"><h3>7-day forecast</h3>${wx.days.map(d=>`<div class="dy"><b>${dn(d.d)}</b>${wIcon(wkind(d.code),30)}<small>💧${d.p||0}%</small><small>${Math.round(d.min)}°</small><div class="rg"><i style="left:${(d.min-mn)/((mx-mn)||1)*100}%;width:${Math.max(8,(d.max-d.min)/((mx-mn)||1)*100)}%"></i></div><b>${Math.round(d.max)}°</b></div>`).join("")}</div>
+ <div class="card"><div class="row"><h3>Herd advice</h3><span class="pill p-${hs.s}">Heat stress: ${hs.l}</span></div>${tips.map(x=>`<div class="tip"><span>${x[0]}</span><span>${x[1]}</span></div>`).join("")}<p class="sub" style="margin-top:10px">THI is a general guideline, not a veterinary diagnosis.</p></div></div>`;
+}
+
+/* ================= UI ================= */
+const pages={overview,herd,map:mapPage,alerts:alertsPage,weather:weatherPage};
+const navs=[["overview","Overview","grid"],["herd","Herd","herd"],["map","Map","map"],["weather","Weather","cloud"],["alerts","Alerts","bell"]];
+let animate=true;
+function countUp(v){v.querySelectorAll(".big").forEach(el=>{const t=el.textContent,n=parseFloat(t);if(isNaN(n))return;const d=((t.split(".")[1]||"").match(/^\d*/)[0]).length,s=t.replace(/^[\d.\-]+/,""),t0=performance.now();(function f(now){const k=Math.min(1,(now-t0)/700);el.textContent=(n*(1-Math.pow(1-k,3))).toFixed(d)+s;if(k<1)requestAnimationFrame(f)})(t0)})}
+function render(){
+ const n=alerts().length;
+ document.getElementById("nav").innerHTML=navs.map(([k,t,i])=>`<button class="nav ${page===k?"on":""}" onclick="go('${k}')">${ic(i)}<span>${t}</span>${k==="alerts"&&n?`<em class="n">${n}</em>`:""}</button>`).join("");
+ // LoRa chip: shows how long ago the last packet arrived
+ const last=goats.length?Math.min(...goats.map(g=>g.mins)):null;
+ document.querySelector("#lora span").textContent=live?("LoRa · "+(last===null?"no data yet":last<1?"last packet just now":"last packet "+last+" min ago")):"LoRa · demo";
+ const v=document.getElementById("view"); v.innerHTML=pages[page]();
+ v.classList.toggle("anim",animate);
+ v.querySelectorAll(".card").forEach((c,i)=>c.style.setProperty("--i",i));
+ if(animate)countUp(v); animate=false;
+}
+function go(p){page=p;animate=true;render()}
+function setM(m){metric=m;animate=true;render()}
+function ack(id){acked.add(id);render()}
+function locate(id){focus=id;query="";document.getElementById("q").value="";go("map")}
+document.getElementById("q").addEventListener("input",e=>{query=e.target.value.trim().toLowerCase();if(page==="overview")page="herd";render()});
+load().then(loadWx); setInterval(load,REFRESH_MS); setInterval(loadWx,9e5);
+</script>
+</body>
+</html>
