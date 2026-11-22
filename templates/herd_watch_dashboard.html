@@ -200,6 +200,20 @@ td{padding:11px 6px;border-top:1px solid rgba(255,255,255,.55)}
 @media (hover:none){
  .card:hover,.btn:hover,.hr:hover,.nav:hover{transform:none}
 }
+
+/* Saved history */
+.history-controls{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:14px}
+.history-controls label{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:700;color:var(--mute)}
+.history-controls select,.history-controls input{font:inherit;color:var(--ink);background:#fff;border:1px solid #b6d2de;border-radius:10px;padding:10px;min-height:40px;max-width:100%}
+.history-controls button{min-height:40px}
+.history-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.history-chart{width:100%;height:220px;display:block}
+.history-map{height:330px;position:relative;overflow:hidden;border-radius:12px;background:#e3f1f3;isolation:isolate;z-index:0}
+.history-scroll{overflow:auto;max-height:400px}
+.history-scroll table{min-width:640px;width:100%}
+.history-scroll td,.history-scroll th{padding:9px;text-align:left;font-size:12px}
+.history-note{color:var(--mute);font-size:12px;margin-top:8px}
+@media(max-width:850px){.history-grid{grid-template-columns:1fr}.history-map{height:280px}}
 </style>
 </head>
 <body>
@@ -257,8 +271,9 @@ let live=false, goats=[], acked=new Set(), page="overview", metric="temp", query
 const hist={temp:[],hr:[]};
 
 function status(g){
-  if(g.temp>=40.3||g.hr>=120||g.battery<10||g.mins>30) return "bad";
-  if(g.temp>=39.8||g.hr>=100||g.battery<20||g.mins>10) return "warn";
+  if(g.mins>=15 || g.stale) return "offline";
+  if(g.temp>=40.3||g.hr>=120||g.battery<10) return "bad";
+  if(g.temp>=39.8||g.hr>=100||g.battery<20) return "warn";
   return "ok";
 }
 function battPct(v){   // battery volts -> percent (18650 Li-ion curve)
@@ -281,7 +296,8 @@ function normalize(r){
       lat:+(gps.lat??x.lat??x.latitude??0),
       lng:+(gps.lon??x.lng??x.longitude??0),
       mins:when?Math.max(0,Math.round((Date.now()-new Date(when))/60000)):(x.mins??0),
-      t:when
+      t:when,
+      stale:x.stale===true || x.status==="offline"
     };
   });
 }
@@ -293,9 +309,10 @@ async function load(){
     live=false;   // keep the last real readings on screen (never invent goats) and keep their "minutes ago" counting
     goats.forEach(g=>{if(g.t)g.mins=Math.max(0,Math.round((Date.now()-new Date(g.t))/60000))});
   }
-  goats.forEach(g=>g.s=status(g));
-  if(live&&goats.length){   // chart history = real readings collected since this page was opened
-    const avg=k=>goats.reduce((a,g)=>a+g[k],0)/goats.length;
+  goats.forEach(g=>{g.s=status(g)});
+  if(live&&goats.some(g=>g.s!=="offline")){   // only online readings contribute to live averages
+    const active=goats.filter(g=>g.s!=="offline");
+    const avg=k=>active.reduce((a,g)=>a+g[k],0)/active.length;
     hist.temp.push(+avg("temp").toFixed(2)); hist.hr.push(Math.round(avg("hr")));
     while(hist.temp.length>12){hist.temp.shift();hist.hr.shift()}
   }
@@ -305,17 +322,18 @@ async function load(){
 }
 
 /* ================= HELPERS ================= */
-const pill = s => `<span class="pill p-${s}">${({ok:"Healthy",warn:"Watch",bad:"Alert"})[s]}</span>`;
-const col=s=>({ok:"#14a46f",warn:"#e89a13",bad:"#e5484d"}[s]);
+const pill = s => `<span class="pill p-${s}" ${s==="offline"?'style="background:#e5e7eb;color:#475569"':""}>${({ok:"Healthy",warn:"Watch",bad:"Alert",offline:"Offline"})[s]}</span>`;
+const col=s=>({ok:"#14a46f",warn:"#e89a13",bad:"#e5484d",offline:"#94a3b8"}[s]);
 const hue=n=>{let h=0;for(const c of n)h=(h*31+c.charCodeAt(0))%360;return h};
-const avg=k=>goats.length?goats.reduce((a,g)=>a+g[k],0)/goats.length:0;
+const avg=k=>{const online=goats.filter(g=>g.s!=="offline");return online.length?online.reduce((a,g)=>a+g[k],0)/online.length:0};
 function alerts(){
   const out=[];
   goats.forEach(g=>{
+    if(g.s==="offline"){out.push({id:g.id+"o",g,s:"bad",t:`Offline — no LoRa signal for ${g.mins} min`});return}
     if(g.temp>=39.8)out.push({id:g.id+"t",g,s:g.temp>=40.3?"bad":"warn",t:`High body temperature: ${g.temp.toFixed(1)} °C`});
     if(g.hr>=100)out.push({id:g.id+"h",g,s:g.hr>=120?"bad":"warn",t:`Elevated heart rate: ${g.hr} bpm`});
     if(g.battery<20)out.push({id:g.id+"b",g,s:g.battery<10?"bad":"warn",t:`Collar battery low: ${g.battery}%`});
-    if(g.mins>10)out.push({id:g.id+"o",g,s:g.mins>30?"bad":"warn",t:`No signal for ${g.mins} min`});
+
   });
   return out.filter(a=>!acked.has(a.id));
 }
@@ -325,9 +343,10 @@ const match=g=>!query||(g.name+g.id).toLowerCase().includes(query);
 /* ================= PAGES ================= */
 function overview(){
   if(!goats.length) return `<div class="head"><div><h1>${greet()}</h1><p class="sub">${live?"Waiting for the first reading from a collar.":"Can't reach the server right now. Trying again every 10 seconds."}</p></div><div><button class="btn g" onclick="load()">${ic("refresh")} Refresh</button></div></div>${wxStrip()}<div class="card" style="margin-top:14px"><p class="empty">${live?"No goats have reported yet. Turn on the collar and check that the Raspberry Pi gateway is running. The first goat appears here within a few seconds.":"The dashboard could not load the goat data. Check your internet connection, or that the website on Render is running."}</p></div>`;
-  const al=alerts(), c={ok:0,warn:0,bad:0}; goats.forEach(g=>c[g.s]++);
-  const pct=goats.length?Math.round(c.ok/goats.length*100):0, R=60, C=2*Math.PI*R;
-  const vals=hist[metric], mx=Math.max(...vals), mn=Math.min(...vals), unit=metric==="temp"?"°C":"bpm", SLOTS=12, pad=SLOTS-vals.length;
+  const al=alerts(), c={ok:0,warn:0,bad:0,offline:0}; goats.forEach(g=>c[g.s]++);
+  const onlineCount=goats.length-c.offline;
+  const pct=onlineCount?Math.round(c.ok/onlineCount*100):0, R=60, C=2*Math.PI*R;
+  const vals=hist[metric], mx=vals.length?Math.max(...vals):0, mn=vals.length?Math.min(...vals):0, unit=metric==="temp"?"°C":"bpm", SLOTS=12, pad=SLOTS-vals.length;
   const secs=REFRESH_MS/1000;
   const bars=Array.from({length:pad},()=>`<div class="bar"><span>&nbsp;</span><i style="height:0"></i><span>&nbsp;</span></div>`).join("")+vals.map((v,i)=>{const h=18+((v-mn)/((mx-mn)||1))*78, last=vals.length-1, lab=i===last?"now":(i===0?"-"+(last*secs)+"s":"&nbsp;");return `<div class="bar"><span>${metric==="temp"?v.toFixed(1):v}</span><i style="height:${h}%"></i><span>${lab}</span></div>`}).join("");
   const need=goats.filter(g=>g.s!=="ok").slice(0,5);
@@ -335,9 +354,9 @@ function overview(){
   return `<div class="head"><div><h1>${greet()}</h1><p class="sub">Here is how your herd is doing right now.</p></div>
    <div><button class="btn g" onclick="load()">${ic("refresh")} Refresh</button> <button class="btn d" onclick="go('alerts')">${ic("bell")} View alerts</button></div></div>
   <div class="grid4">
-   ${card("herd",goats.length,"Goats tracked",goats.filter(g=>g.mins<=10).length+" online","ok")}
-   ${card("temp",avg("temp").toFixed(1)+"°",'Average body temperature',avg("temp")>=39.8?"High":"Normal",avg("temp")>=39.8?"warn":"ok")}
-   ${card("heart",Math.round(avg("hr")),"Average heart rate (bpm)",avg("hr")>=100?"High":"Normal",avg("hr")>=100?"warn":"ok")}
+   ${card("herd",goats.length,"Goats tracked",onlineCount+" online · "+c.offline+" offline","ok")}
+   ${card("temp",(onlineCount?avg("temp").toFixed(1)+"°":"—"),'Average body temperature',avg("temp")>=39.8?"High":"Normal",avg("temp")>=39.8?"warn":"ok")}
+   ${card("heart",(onlineCount?Math.round(avg("hr")):"—"),"Average heart rate (bpm)",avg("hr")>=100?"High":"Normal",avg("hr")>=100?"warn":"ok")}
    ${card("bell",al.length,"Active alerts",al.length?"Check now":"All clear",al.length?"bad":"ok")}
   </div>
   ${wxStrip()}
@@ -345,9 +364,9 @@ function overview(){
    <div class="card"><div class="row"><div><h3>Herd vitals</h3><p class="sub">Herd average, live (a reading every 10 s)</p></div>
      <div class="tabs"><button class="tab ${metric==="temp"?"on":""}" onclick="setM('temp')">Temperature</button><button class="tab ${metric==="hr"?"on":""}" onclick="setM('hr')">Heart rate</button></div></div>
      <div class="bars">${bars}</div><p class="sub" style="text-align:center;margin-top:8px">Unit: ${unit}</p></div>
-   <div class="card"><h3>Herd status</h3><p class="sub">Share of healthy goats</p>
+   <div class="card"><h3>Herd status</h3><p class="sub">Share of healthy online goats</p>
      <div class="donut"><svg viewBox="0 0 150 150" width="150" height="150"><circle cx="75" cy="75" r="${R}" fill="none" stroke="rgba(255,255,255,.7)" stroke-width="14"/><circle cx="75" cy="75" r="${R}" fill="none" stroke="#22c6e8" stroke-width="14" stroke-linecap="round" stroke-dasharray="${C*pct/100} ${C}" transform="rotate(-90 75 75)"/></svg><b>${pct}%</b></div>
-     <div class="mini"><div><b>${c.ok}</b>Healthy</div><div><b>${c.warn}</b>Watch</div><div><b>${c.bad}</b>Alert</div></div></div>
+     <div class="mini"><div><b>${c.ok}</b>Healthy</div><div><b>${c.warn}</b>Watch</div><div><b>${c.bad}</b>Alert</div><div><b>${c.offline}</b>Offline</div></div></div>
   </div>
   <div class="card" style="margin-top:14px"><h3>Needs attention</h3>
    ${need.length?`<table><tr><th>Goat</th><th>Temp</th><th>Heart rate</th><th>Battery</th><th>Status</th></tr>${need.map(g=>`<tr><td><b>${g.name}</b> <small style="color:var(--mute)">${g.id}</small></td><td data-l="Temp">${g.temp.toFixed(1)} °C</td><td data-l="Heart rate">${g.hr} bpm</td><td data-l="Battery">${g.battery}%</td><td>${pill(g.s)}</td></tr>`).join("")}</table>`:`<p class="empty">Every goat looks healthy.</p>`}</div>`;
@@ -356,9 +375,9 @@ function herd(){
   const l=goats.filter(match);
   return `<div class="head"><div><h1>Herd</h1><p class="sub">${l.length} of ${goats.length} goats shown</p></div></div>
   <div class="herd">${l.map((g,i)=>`<div class="card gc" style="animation-delay:${i*40}ms"><div class="gh" style="background:linear-gradient(135deg,hsl(${hue(g.name)} 60% 55%),hsl(${(hue(g.name)+50)%360} 65% 42%))">${g.name[0]}${pill(g.s)}</div>
-   <div class="gb"><h4>${g.name}</h4><small>Collar ${g.id} · seen ${g.mins} min ago</small>
-   <div class="stats"><div><b>${g.temp.toFixed(1)}°</b>Temp</div><div><b>${g.hr}</b>BPM</div><div><b>${g.battery}%</b>Battery</div></div>
-   <button class="btn g" style="width:100%;justify-content:center" onclick="locate('${g.id}')">${ic("map")} Locate</button></div></div>`).join("")||`<p class="empty">${goats.length?"No goats match your search.":(live?"No goats yet. Waiting for the first collar reading.":"Can't reach the server right now.")}</p>`}</div>`;
+   <div class="gb"><h4>${hEscape(g.name)}</h4><small>Collar ${hEscape(g.id)} · ${g.s==="offline"?"OFFLINE · last seen "+g.mins+" min ago":"seen "+g.mins+" min ago"}</small>
+   <div class="stats"><div><b>${g.temp.toFixed(1)}°</b>${g.s==="offline"?"Last temp":"Temp"}</div><div><b>${g.hr}</b>${g.s==="offline"?"Last BPM":"BPM"}</div><div><b>${g.battery}%</b>Battery</div></div>
+   <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn g" style="flex:1;justify-content:center" onclick="locate('${g.id}')">${ic("map")} Locate</button><button class="btn g" style="flex:1;justify-content:center" onclick="renameGoat('${g.id}')">Rename</button></div></div></div>`).join("")||`<p class="empty">${goats.length?"No goats match your search.":(live?"No goats yet. Waiting for the first collar reading.":"Can't reach the server right now.")}</p>`}</div>`;
 }
 // A genuine geographic map; markers only use coordinates received from the backend.
 let leafletMap=null, goatMarkers=new Map();
@@ -368,8 +387,8 @@ function mapPage(){
   const shown=goats.filter(g=>validPosition(g)&&match(g));
   return `<div class="head"><div><h1>Live GPS map</h1><p class="sub">OpenStreetMap · ${shown.length} valid collar position${shown.length===1?"":"s"}${live?"":" · last known positions"}</p></div></div>
   <div id="leaflet-map" role="region" aria-label="Interactive map showing goat GPS positions"></div>
-  <p class="sub" style="margin-top:10px">${shown.length?"Tap a marker for goat details. Positions update when new readings arrive.":"No valid GPS positions yet. The map will show your goats when GPS readings arrive."}</p>
-  <div class="leg"><span style="--c:#14a46f">Healthy</span><span style="--c:#e89a13">Watch</span><span style="--c:#e5484d">Alert</span></div>`;
+  <p class="sub" style="margin-top:10px">${shown.length?"Tap a marker for goat details. Offline pins show the last known position, not the current location.":"No valid GPS positions yet. The map will show your goats when GPS readings arrive."}</p>
+  <div class="leg"><span style="--c:#14a46f">Healthy</span><span style="--c:#e89a13">Watch</span><span style="--c:#e5484d">Alert</span><span style="--c:#94a3b8">Offline</span></div>`;
 }
 function updateLeafletMap(){
   if(page!=="map")return;
@@ -393,7 +412,7 @@ function updateLeafletMap(){
     const marker=goatMarkers.get(id)||L.circleMarker(position,{radius:10,weight:2,color:"#ffffff",fillOpacity:.9}).addTo(leafletMap);
     marker.setLatLng(position);
     marker.setStyle({fillColor:col(g.s)});
-    marker.bindPopup(`<strong>${escapeMapText(g.name)}</strong><br>Collar: ${escapeMapText(g.id)}<br>Temperature: ${Number.isFinite(g.temp)?g.temp.toFixed(1)+" °C":"N/A"}<br>Heart rate: ${Number.isFinite(g.hr)?g.hr+" bpm":"N/A"}<br>Battery: ${Number.isFinite(g.battery)?g.battery+"%":"N/A"}<br>Last reading: ${g.mins} min ago`);
+    marker.bindPopup(`<strong>${escapeMapText(g.name)}</strong><br>Collar: ${escapeMapText(g.id)}<br>Temperature: ${Number.isFinite(g.temp)?g.temp.toFixed(1)+" °C":"N/A"}<br>Heart rate: ${Number.isFinite(g.hr)?g.hr+" bpm":"N/A"}<br>Battery: ${Number.isFinite(g.battery)?g.battery+"%":"N/A"}<br>Status: ${g.s==="offline"?"OFFLINE — last known location":g.s}<br>Last reading: ${g.mins} min ago`);
     goatMarkers.set(id,marker);
   }
   // Only reposition on initial opening or when Locate is requested.
@@ -427,7 +446,7 @@ const wIcon=(k,s=64)=>{
  const b={sun:sun(),part:sun('transform="translate(0 -4) scale(.72)"')+cl,cloud:cl,rain:cl+drops,storm:cl+`<path class="bolt" d="M35 44l-7 11h5l-3 8 10-13h-5z" fill="#ffd34d"/>`,fog:cl+[52,57].map(y=>`<line x1="14" y1="${y}" x2="50" y2="${y}" stroke="#a9cfdd" stroke-width="3" stroke-linecap="round"/>`).join("")}[k];
  return `<svg viewBox="0 0 64 64" width="${s}" height="${s}">${b}</svg>`};
 async function loadWx(){
- const pts=goats.filter(g=>g.lat&&g.lng),useG=live&&pts.length;
+ const pts=goats.filter(g=>g.s!=="offline"&&g.lat&&g.lng),useG=live&&pts.length;
  const la=useG?pts.reduce((a,g)=>a+g.lat,0)/pts.length:WEATHER_LAT,ln=useG?pts.reduce((a,g)=>a+g.lng,0)/pts.length:WEATHER_LNG;
  try{
   const r=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${la}&longitude=${ln}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&hourly=temperature_2m,precipitation_probability,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=7`);
@@ -462,19 +481,125 @@ function weatherPage(){
  <div class="card"><div class="row"><h3>Herd advice</h3><span class="pill p-${hs.s}">Heat stress: ${hs.l}</span></div>${tips.map(x=>`<div class="tip"><span>${x[0]}</span><span>${x[1]}</span></div>`).join("")}<p class="sub" style="margin-top:10px">THI is a general guideline, not a veterinary diagnosis.</p></div></div>`;
 }
 
+
+
+/* ================= PERSISTENT GOAT NAMES ================= */
+async function renameGoat(goatId){
+ const g=goats.find(x=>x.id===goatId);
+ if(!g)return;
+ const entered=prompt(`Enter a name for collar ${goatId} (1–40 characters):`,g.name);
+ if(entered===null)return;
+ const name=entered.trim();
+ if(!name||name.length>40){alert('Please enter a name between 1 and 40 characters.');return}
+ const token=prompt('Enter GOAT_RENAME_TOKEN from Render. It will not be saved in your browser.');
+ if(!token)return;
+ try{
+  const r=await fetch(`/api/goats/${encodeURIComponent(goatId)}/name`,{
+   method:'PUT',headers:{'Content-Type':'application/json','X-Goat-Rename-Key':token},
+   body:JSON.stringify({name})
+  });
+  const data=await r.json();
+  if(!r.ok)throw new Error(data.error||'Rename failed');
+  await load();
+  alert(`Collar ${goatId} is now named ${name}.`);
+ }catch(e){alert('Could not rename goat: '+e.message)}
+}
+
+/* ================= SUPABASE SAVED HISTORY ================= */
+let historyGoat='',historyDate='',historyRows=[],historyMap=null,historyTrail=null,historyLoading=false,historyRequestId=0;
+const historyLocalDate=()=>{const d=new Date(),offset=d.getTimezoneOffset();return new Date(d.getTime()-offset*60000).toISOString().slice(0,10)};
+function hEscape(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function hDateTime(t){const d=new Date(t);return Number.isNaN(+d)?'—':d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'})}
+function historyPage(){return '<div class="head"><h1>History</h1></div><p>Loading saved readings…</p>'}
+function destroyHistoryMap(){if(historyMap){historyMap.remove();historyMap=null;historyTrail=null}}
+function renderHistoryShell(){
+ destroyHistoryMap();
+ if(!historyDate)historyDate=historyLocalDate();
+ if(!goats.some(g=>g.id===historyGoat))historyGoat=goats[0]?.id||'';
+ const v=document.getElementById('view');
+ document.getElementById('nav').innerHTML=navs.map(([k,t,i])=>`<button class="nav ${page===k?'on':''}" onclick="go('${k}')">${ic(i)}<span>${t}</span></button>`).join('');
+ v.innerHTML=`<div class="head"><div><h1>Saved history</h1><p class="sub">Readings saved in Supabase · dates use Philippine time (UTC+8)</p></div></div>
+ <div class="card"><div class="history-controls">
+ <label>Goat<select id="history-goat" onchange="historyGoat=this.value;loadHistory()">${goats.map(g=>`<option value="${hEscape(g.id)}" ${g.id===historyGoat?'selected':''}>${hEscape(g.name)} (${hEscape(g.id)})</option>`).join('')}</select></label>
+ <label>Date<input id="history-date" type="date" value="${historyDate}" onchange="historyDate=this.value;loadHistory()"></label>
+ <button class="btn g" onclick="shiftHistoryDate(-1)">← Previous day</button><button class="btn g" onclick="shiftHistoryDate(1)">Next day →</button>
+ <button class="btn g" onclick="loadHistory()">${ic('refresh')} Refresh</button>
+ <button class="btn d" style="margin-left:auto;background:#a8333d;color:white" onclick="deleteHistoryDay()">Delete selected day</button>
+ </div><p id="history-state" class="history-note">Choose a goat and date to load its saved readings.</p></div>
+ <div class="history-grid" style="margin-top:12px">
+ <div class="card"><h3>Temperature history</h3><div id="history-temp"></div></div>
+ <div class="card"><h3>Heart-rate history</h3><div id="history-hr"></div></div>
+ </div><div class="card" style="margin-top:12px"><h3>GPS location trail</h3><div id="history-map" class="history-map"></div><p id="history-gps-note" class="history-note"></p></div>
+ <div class="card" style="margin-top:12px"><h3>Saved readings</h3><div class="history-scroll" id="history-table"></div></div>`;
+}
+function shiftHistoryDate(days){const d=new Date(historyDate+'T12:00:00');d.setDate(d.getDate()+days);historyDate=[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');document.getElementById('history-date').value=historyDate;loadHistory()}
+function historyPlot(rows,key,validKey,unit,stroke){
+ const vals=rows.map((r,i)=>({i,v:Number(r[key]),valid:r[validKey]===true&&r[key]!=null&&Number.isFinite(Number(r[key]))})).filter(x=>x.valid);
+ if(!vals.length)return `<p class="empty">No valid ${unit==='°C'?'temperature':'heart-rate'} readings for this day.</p>`;
+ const w=640,h=210,l=55,r=18,t=18,b=38,min=Math.min(...vals.map(x=>x.v)),max=Math.max(...vals.map(x=>x.v)),span=(max-min)||1;
+ const xx=i=>l+(i/Math.max(1,rows.length-1))*(w-l-r),yy=v=>t+(max-v)/span*(h-t-b);
+ // Gaps between invalid samples must not be drawn as continuous readings.
+ let path='',active=false;rows.forEach((row,i)=>{const v=Number(row[key]),valid=row[validKey]===true&&row[key]!=null&&Number.isFinite(v);if(valid){path+=(active?'L':'M')+xx(i).toFixed(1)+' '+yy(v).toFixed(1)+' ';active=true}else active=false});
+ const points=vals.length<=120?vals.map(x=>`<circle cx="${xx(x.i)}" cy="${yy(x.v)}" r="2.7" fill="${stroke}"/>`).join(''):'';
+ return `<svg class="history-chart" viewBox="0 0 ${w} ${h}" role="img" aria-label="${unit} readings by time"><line x1="${l}" y1="${h-b}" x2="${w-r}" y2="${h-b}" stroke="#a9c7d1"/><line x1="${l}" y1="${t}" x2="${l}" y2="${h-b}" stroke="#a9c7d1"/><text x="8" y="${t+7}" font-size="12" fill="#416273">${max.toFixed(1)} ${unit}</text><text x="8" y="${h-b}" font-size="12" fill="#416273">${min.toFixed(1)} ${unit}</text><path d="${path}" fill="none" stroke="${stroke}" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>${points}<text x="${l}" y="${h-10}" font-size="12" fill="#416273">${hEscape(hDateTime(rows[0].received_at))}</text><text x="${w-r}" y="${h-10}" text-anchor="end" font-size="12" fill="#416273">${hEscape(hDateTime(rows.at(-1).received_at))}</text></svg><p class="history-note">${vals.length} valid readings · min ${min.toFixed(1)} ${unit} · max ${max.toFixed(1)} ${unit}</p>`;
+}
+function renderHistoryData(truncated){
+ document.getElementById('history-state').textContent=`${historyRows.length} readings for ${historyDate}${truncated?' · Limit reached: older readings for this date may be omitted':''}`;
+ document.getElementById('history-temp').innerHTML=historyPlot(historyRows,'temperature_c','temperature_valid','°C','#09aeca');
+ document.getElementById('history-hr').innerHTML=historyPlot(historyRows,'heart_rate_bpm','heart_rate_valid','bpm','#d65c75');
+ const gps=historyRows.filter(r=>r.gps?.valid&&Number.isFinite(Number(r.gps.lat))&&Number.isFinite(Number(r.gps.lon))&&r.gps.lat!=null&&r.gps.lon!=null&&Number(r.gps.lat)>=-90&&Number(r.gps.lat)<=90&&Number(r.gps.lon)>=-180&&Number(r.gps.lon)<=180&&!(Number(r.gps.lat)===0&&Number(r.gps.lon)===0));
+ document.getElementById('history-gps-note').textContent=gps.length?`${gps.length} valid GPS positions. The blue line connects received positions in timestamp order; gaps and GPS accuracy may affect the route.`:'No valid GPS coordinates for this date.';
+ destroyHistoryMap();
+ if(typeof L==='undefined'){document.getElementById('history-map').textContent='Map library unavailable. Check your internet connection.'}
+ else{
+ historyMap=L.map('history-map',{scrollWheelZoom:false}).setView([15.145,120.589],11);
+ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}).addTo(historyMap);
+ if(gps.length){const pts=gps.map(r=>[Number(r.gps.lat),Number(r.gps.lon)]);historyTrail=L.polyline(pts,{color:'#009bc0',weight:4}).addTo(historyMap);L.circleMarker(pts[0],{radius:7,color:'#14804a',fillOpacity:1}).bindPopup('First recorded position · '+hEscape(hDateTime(gps[0].received_at))).addTo(historyMap);L.circleMarker(pts.at(-1),{radius:7,color:'#c23d43',fillOpacity:1}).bindPopup('Last recorded position · '+hEscape(hDateTime(gps.at(-1).received_at))).addTo(historyMap);if(pts.length>1)historyMap.fitBounds(historyTrail.getBounds().pad(.15),{maxZoom:16});else historyMap.setView(pts[0],16)}
+ setTimeout(()=>historyMap?.invalidateSize(),80);
+ }
+ const fmt=(x,ok,unit)=>ok&&x!=null?`${hEscape(x)}${unit}`:'—';
+ document.getElementById('history-table').innerHTML=historyRows.length?`<table><thead><tr><th>Time (PH)</th><th>Temperature</th><th>Heart rate</th><th>Battery</th><th>GPS</th></tr></thead><tbody>${historyRows.map(r=>`<tr><td>${hEscape(hDateTime(r.received_at))}</td><td>${fmt(r.temperature_c,r.temperature_valid,' °C')}</td><td>${fmt(r.heart_rate_bpm,r.heart_rate_valid,' bpm')}</td><td>${r.battery_pct!=null?hEscape(r.battery_pct)+'%':r.battery_v!=null?hEscape(r.battery_v)+' V':'—'}</td><td>${r.gps?.valid&&r.gps.lat!=null&&r.gps.lon!=null?hEscape(Number(r.gps.lat).toFixed(5))+', '+hEscape(Number(r.gps.lon).toFixed(5)):'—'}</td></tr>`).join('')}</tbody></table>`:'<p class="empty">No readings saved for this goat on this day.</p>';
+}
+async function loadHistory(){
+ if(page!=='history')return;
+ if(!historyGoat){document.getElementById('history-state').textContent='No goats found. Wait for the first collar reading.';return}
+ const requestId=++historyRequestId;
+ historyLoading=true;
+ const state=document.getElementById('history-state');state.textContent='Loading saved readings…';
+ try{
+ const url=`/api/history-day/${encodeURIComponent(historyGoat)}?date=${encodeURIComponent(historyDate)}`;
+ const res=await fetch(url,{cache:'no-store'}),j=await res.json();if(!res.ok)throw new Error(j.error||'Unable to load history');
+ if(page!=='history'||requestId!==historyRequestId)return;
+ historyRows=j.readings||[];renderHistoryData(!!j.truncated);
+ }catch(e){if(requestId===historyRequestId&&page==='history')state.textContent='History error: '+e.message}
+ finally{if(requestId===historyRequestId)historyLoading=false}
+}
+async function deleteHistoryDay(){
+ if(!historyGoat||!historyDate)return;
+ if(!confirm(`Permanently delete ALL saved readings for goat ${historyGoat} on ${historyDate} (Philippine time)? This cannot be undone.`))return;
+ const key=prompt('Enter the HISTORY_DELETE_TOKEN from Render (not the GOAT_API_KEY). This is not saved in the browser.');if(!key)return;
+ try{
+ const res=await fetch(`/api/history-day/${encodeURIComponent(historyGoat)}`,{method:'DELETE',headers:{'Content-Type':'application/json','X-History-Delete-Key':key},body:JSON.stringify({date:historyDate})});
+ const j=await res.json();if(!res.ok)throw new Error(j.error||'Deletion failed');
+ alert('Selected day deleted.');await loadHistory();await load();
+ }catch(e){alert('Could not delete history: '+e.message)}
+}
+
 /* ================= UI ================= */
-const pages={overview,herd,map:mapPage,alerts:alertsPage,weather:weatherPage};
-const navs=[["overview","Overview","grid"],["herd","Herd","herd"],["map","Map","map"],["weather","Weather","cloud"],["alerts","Alerts","bell"]];
+const pages={overview,herd,map:mapPage,alerts:alertsPage,weather:weatherPage,history:historyPage};
+const navs=[["overview","Overview","grid"],["herd","Herd","herd"],["map","Map","map"],["history","History","heart"],["weather","Weather","cloud"],["alerts","Alerts","bell"]];
 let animate=true;
 function countUp(v){v.querySelectorAll(".big").forEach(el=>{const t=el.textContent,n=parseFloat(t);if(isNaN(n))return;const d=((t.split(".")[1]||"").match(/^\d*/)[0]).length,s=t.replace(/^[\d.\-]+/,""),t0=performance.now();(function f(now){const k=Math.min(1,(now-t0)/700);el.textContent=(n*(1-Math.pow(1-k,3))).toFixed(d)+s;if(k<1)requestAnimationFrame(f)})(t0)})}
 function render(){
  const n=alerts().length;
  document.getElementById("nav").innerHTML=navs.map(([k,t,i])=>`<button class="nav ${page===k?"on":""}" onclick="go('${k}')">${ic(i)}<span>${t}</span>${k==="alerts"&&n?`<em class="n">${n}</em>`:""}</button>`).join("");
  // LoRa chip: shows how long ago the last packet arrived
- const last=goats.length?Math.min(...goats.map(g=>g.mins)):null;
- document.querySelector("#lora span").textContent=live?("LoRa · "+(last===null?"no data yet":last<1?"last packet just now":"last packet "+last+" min ago")):"LoRa · unknown";
+ const onlineGoats=goats.filter(g=>g.s!=="offline");
+ const last=onlineGoats.length?Math.min(...onlineGoats.map(g=>g.mins)):null;
+ document.querySelector("#lora span").textContent=live?("LoRa · "+(last===null?"no recent signal":last<1?"last packet just now":"last packet "+last+" min ago")):"LoRa · unknown";
  const v=document.getElementById("view");
  const hs=v.querySelector(".hours"), hx=hs?hs.scrollLeft:0;
+ if(page==="history")return; // History has its own map and asynchronous data loading.
  if(page!=="map")destroyLeafletMap();
  if(page==="map"&&leafletMap){
    // Keep the map DOM intact on 10-second refreshes so user zoom/pan is preserved.
@@ -488,7 +613,7 @@ function render(){
  v.querySelectorAll(".card").forEach((c,i)=>c.style.setProperty("--i",i));
  if(animate)countUp(v); animate=false;
 }
-function go(p){if(p==="map"&&page!=="map")mapNeedsFit=true;page=p;animate=true;render();if(mobile())window.scrollTo(0,0)}
+function go(p){if(page==="history"&&p!=="history")destroyHistoryMap();if(p==="map"&&page!=="map")mapNeedsFit=true;page=p;animate=true;if(p==="history"){destroyLeafletMap();renderHistoryShell();loadHistory()}else render();if(mobile())window.scrollTo(0,0)}
 function setM(m){metric=m;animate=true;render()}
 function ack(id){acked.add(id);render()}
 function locate(id){focus=id;query="";document.getElementById("q").value="";go("map")}
