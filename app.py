@@ -1,7 +1,8 @@
 import hmac
 import os
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date, time
+from zoneinfo import ZoneInfo
 from functools import wraps
 
 from flask import Flask, Response, request, jsonify, render_template
@@ -12,7 +13,12 @@ load_dotenv()
 from supabase_client import supabase  # readings are stored in Supabase (Render's disk is not permanent)
 
 # ---------- Config ----------
-API_KEY = os.environ.get("GOAT_API_KEY", "change-me-shared-secret")  # must match the key used by the Raspberry Pi script
+HISTORY_DELETE_TOKEN = os.environ.get("HISTORY_DELETE_TOKEN", "")
+GOAT_RENAME_TOKEN = os.environ.get("GOAT_RENAME_TOKEN", "")
+API_KEY = os.environ.get("GOAT_API_KEY", "")  # must match the key used by the Raspberry Pi script
+REGISTERED_GOATS = {f'G{i:03d}' for i in range(1, 101)}
+# Keep detected collars visible indefinitely; mark them offline after 15 minutes.
+ACTIVE_WINDOW_SECONDS = 15 * 60
 STALE_AFTER_SECONDS = 15 * 60  # a goat with no update in this long is flagged "offline"
 
 # Alert thresholds - keep in sync with the dashboard
@@ -122,12 +128,15 @@ def row_to_dict(row):
 # ---------- API: ingest (the Raspberry Pi posts here) ----------
 @app.route("/api/data", methods=["POST"])
 def ingest_data():
-    if request.headers.get("X-API-Key") != API_KEY:
+    if not API_KEY or not hmac.compare_digest(request.headers.get("X-API-Key", ""), API_KEY):
         return jsonify({"error": "unauthorized"}), 401
 
     payload = request.get_json(silent=True)
     if not payload or "goat_id" not in payload:
         return jsonify({"error": "invalid payload"}), 400
+
+    if str(payload.get("goat_id")) not in REGISTERED_GOATS:
+        return jsonify({"error": "unregistered collar ID"}), 403
 
     gps = payload.get("gps", {}) or {}
 
@@ -156,19 +165,62 @@ def ingest_data():
 @app.route("/api/goats", methods=["GET"])
 @require_dashboard_auth
 def list_goats():
-    """Latest reading for every goat that has ever reported in."""
+    """Return registered collars that have transmitted at least once, including offline collars."""
     try:
         rows = supabase.table("latest_readings").select("*").order("goat_id").execute().data or []
     except Exception as e:
         return jsonify({"error": f"database error: {e}"}), 502
 
+    # Display names are metadata; only detected collars in latest_readings are listed.
+    try:
+        metadata = supabase.table("goat_profiles").select("goat_id,display_name").execute().data or []
+        names = {r["goat_id"]: r["display_name"] for r in metadata}
+    except Exception:
+        app.logger.exception("Unable to load goat names")
+        return jsonify({"error": "Could not load goat names. Apply goat_profiles.sql in Supabase."}), 502
+
     goats = []
     for row in rows:
+        if row.get("goat_id") not in REGISTERED_GOATS:
+            continue
         d = row_to_dict(row)
-        d["status"] = classify_status(row)
-        d["stale"] = is_stale(row["received_at"])
+        d["name"] = names.get(row["goat_id"], row["goat_id"])
+        d["stale"] = is_stale(row.get("received_at"), ACTIVE_WINDOW_SECONDS)
+        d["status"] = "offline" if d["stale"] else classify_status(row)
         goats.append(d)
     return jsonify({"goats": goats})
+
+
+@app.route("/api/goats/<goat_id>/name", methods=["PUT"])
+@require_dashboard_auth
+def rename_goat(goat_id):
+    """Rename a collar without changing its permanent ID or historical readings."""
+    if goat_id not in REGISTERED_GOATS:
+        return jsonify({"error": "Unregistered collar ID"}), 404
+    key = request.headers.get("X-Goat-Rename-Key", "")
+    if not GOAT_RENAME_TOKEN or not hmac.compare_digest(key, GOAT_RENAME_TOKEN):
+        return jsonify({"error": "Rename not authorized. Configure GOAT_RENAME_TOKEN in Render."}), 403
+    origin = request.headers.get("Origin")
+    if origin and origin.rstrip("/") != request.host_url.rstrip("/"):
+        return jsonify({"error": "Invalid request origin"}), 403
+    payload = request.get_json(silent=True) or {}
+    name = payload.get("name")
+    if not isinstance(name, str):
+        return jsonify({"error": "Name must be text"}), 400
+    name = name.strip()
+    if not (1 <= len(name) <= 40) or any(ord(c) < 32 for c in name):
+        return jsonify({"error": "Name must contain 1–40 printable characters"}), 400
+    try:
+        # Prevent profiles for collars never actually detected by this system.
+        existing = (supabase.table("latest_readings").select("goat_id")
+                    .eq("goat_id", goat_id).limit(1).execute().data or [])
+        if not existing:
+            return jsonify({"error": "Collar has not transmitted yet"}), 404
+        supabase.table("goat_profiles").upsert({"goat_id": goat_id, "display_name": name}, on_conflict="goat_id").execute()
+    except Exception:
+        app.logger.exception("Goat rename failed")
+        return jsonify({"error": "Could not save goat name. Check goat_profiles table."}), 502
+    return jsonify({"goat_id": goat_id, "name": name})
 
 
 @app.route("/api/history/<goat_id>", methods=["GET"])
@@ -203,6 +255,81 @@ def goat_track(goat_id):
         "goat_id": goat_id,
         "points": [{"lat": r["lat"], "lon": r["lon"], "t": r["received_at"]} for r in rows],
     })
+
+
+
+# ---------- History by Philippine calendar day ----------
+PH_TZ = ZoneInfo("Asia/Manila")
+
+
+def day_bounds(day_text):
+    """Return inclusive/exclusive UTC bounds for a Philippine local calendar day."""
+    try:
+        day = date.fromisoformat(day_text)
+        if day.isoformat() != day_text:
+            raise ValueError("invalid format")
+    except (TypeError, ValueError):
+        return None
+    start = datetime.combine(day, time.min, tzinfo=PH_TZ).astimezone(timezone.utc)
+    end = start + timedelta(days=1)
+    return start.isoformat(), end.isoformat()
+
+
+@app.route("/api/history-day/<goat_id>", methods=["GET"])
+@require_dashboard_auth
+def goat_history_day(goat_id):
+    day = request.args.get("date", "")
+    bounds = day_bounds(day)
+    if not bounds:
+        return jsonify({"error": "date must be YYYY-MM-DD"}), 400
+    start, end = bounds
+    rows = []
+    page_size = 1000
+    max_rows = 10000
+    try:
+        for offset in range(0, max_rows + page_size, page_size):
+            batch = (supabase.table("readings").select("*")
+                     .eq("goat_id", goat_id)
+                     .gte("received_at", start).lt("received_at", end)
+                     .order("received_at", desc=False).order("id", desc=False)
+                     .range(offset, offset + page_size - 1).execute().data or [])
+            rows.extend(batch)
+            if len(batch) < page_size:
+                break
+    except Exception:
+        app.logger.exception("History query failed")
+        return jsonify({"error": "Could not read history from database"}), 502
+    truncated = len(rows) > max_rows
+    rows = rows[:max_rows]
+    return jsonify({"goat_id": goat_id, "date": day,
+                    "readings": [row_to_dict(r) for r in rows],
+                    "truncated": truncated})
+
+
+@app.route("/api/history-day/<goat_id>", methods=["DELETE"])
+@require_dashboard_auth
+def delete_goat_history_day(goat_id):
+    # Dedicated secret; never reuse the Pi's ingestion key or expose this in HTML.
+    key = request.headers.get("X-History-Delete-Key", "")
+    if not HISTORY_DELETE_TOKEN or not hmac.compare_digest(key, HISTORY_DELETE_TOKEN):
+        return jsonify({"error": "Deletion not authorized. Configure HISTORY_DELETE_TOKEN in Render."}), 403
+    # Prevent cross-site forms/requests from triggering deletion.
+    origin = request.headers.get("Origin")
+    if origin and origin.rstrip("/") != request.host_url.rstrip("/"):
+        return jsonify({"error": "Invalid request origin"}), 403
+    payload = request.get_json(silent=True) or {}
+    day = payload.get("date")
+    bounds = day_bounds(day)
+    if not bounds:
+        return jsonify({"error": "date must be YYYY-MM-DD"}), 400
+    start, end = bounds
+    try:
+        # PostgREST filters delete only the selected goat and Philippine day.
+        supabase.table("readings").delete().eq("goat_id", goat_id).gte("received_at", start).lt("received_at", end).execute()
+    except Exception:
+        app.logger.exception("History deletion failed")
+        return jsonify({"error": "Could not delete history"}), 502
+    return jsonify({"status": "deleted", "goat_id": goat_id, "date": day})
 
 
 # ---------- Dashboard page ----------
